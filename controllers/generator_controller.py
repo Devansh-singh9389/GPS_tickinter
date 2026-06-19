@@ -1,10 +1,15 @@
-import threading, queue, tkinter as tk
-from tkinter import filedialog
+import threading
+import queue
+import tkinter as tk
+import pathlib
+import re
+import json       # <-- NEW
+import datetime   # <-- NEW
+from tkinter import filedialog, messagebox
 from services.generator_service import GeneratorService
 from views.tab_generator import GeneratorView
-from views.components import MultiSelectDeleteDialog
 from core.config import DATA_DIR_BINARY
-from tkinter import messagebox
+from views.components import MultiSelectDeleteDialog
 
 class GeneratorController:
     def __init__(self, parent, app_state):
@@ -13,81 +18,193 @@ class GeneratorController:
         self.q = queue.Queue()
         self.view = GeneratorView(parent, self, app_state)
         self.view.pack(fill=tk.BOTH, expand=True)
+        
         self._busy = False
+        self._user_locked_name = False
 
+        # --- SETUP REACTIVE AUTO-NAMING ---
+        triggers = [
+            self.view.motion_mode_var, self.view.sample_rate_var, 
+            self.view.iq_bits_var, self.view.llh_lat_var, 
+            self.view.llh_lon_var, self.view.csv_file_var, 
+            self.view.nmea_file_var
+        ]
+        for var in triggers:
+            var.trace_add("write", self.generate_auto_name)
+        
+        self.generate_auto_name()
+
+    def force_auto_name(self):
+        """Unlocks the user override and forces an auto-name generation."""
+        self._user_locked_name = False
+        self.generate_auto_name()
+        self.view.log_line("Output filename auto-generated based on current parameters.", "success")
+
+    def generate_auto_name(self, *args):
+        """Builds a smart filename based on current UI parameters."""
+        if self._user_locked_name or not hasattr(self, 'view'):
+            return
+            
+        mode = self.view.motion_mode_var.get()
+        sr = self.view.sample_rate_var.get()
+        bits = self.view.iq_bits_var.get()
+
+        try:
+            sr_mhz = float(sr) / 1000000
+            sr_str = f"{sr_mhz:g}MHz" 
+        except ValueError:
+            sr_str = f"{sr}Hz"
+
+        if mode == "static":
+            if self.view.static_coord_var.get() == "ecef":
+                loc_str = "Static_ECEF"
+            else:
+                lat = self.view.llh_lat_var.get()[:6]
+                lon = self.view.llh_lon_var.get()[:7]
+                loc_str = f"Static_Lat{lat}_Lon{lon}"
+        elif mode == "csv":
+            path_str = self.view.csv_file_var.get()
+            loc_str = f"Dynamic_{pathlib.Path(path_str).stem}" if path_str else "Dynamic_CSV"
+        elif mode == "nmea":
+            path_str = self.view.nmea_file_var.get()
+            loc_str = f"Dynamic_{pathlib.Path(path_str).stem}" if path_str else "Dynamic_NMEA"
+        else:
+            loc_str = "GPS_Baseband"
+
+        loc_str = re.sub(r'[^a-zA-Z0-9_\-\.]', '', loc_str).strip('_')
+
+        filename = f"{loc_str}_{sr_str}_{bits}bit.bin"
+        
+        target_path = DATA_DIR_BINARY / filename
+        self.view.output_file_var.set(str(target_path))
+
+    # --- NEW: METADATA SIDECAR GENERATOR ---
+    def _save_metadata_sidecar(self, bin_path_str):
+        bin_path = pathlib.Path(bin_path_str)
+        json_path = bin_path.with_suffix('.json')
+        mode = self.view.motion_mode_var.get()
+
+        # Build the structured dictionary
+        metadata = {
+            "filename": bin_path.name,
+            "created_at": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
+            "generator_settings": {
+                "duration_seconds": self.view.duration_var.get(),
+                "sample_rate_hz": self.view.sample_rate_var.get(),
+                "iq_bits": self.view.iq_bits_var.get(),
+                "motion_mode": mode,
+            },
+            "physics_flags": {
+                "disable_iono": self.view.disable_iono_var.get(),
+                "disable_pathloss": self.view.disable_pathloss_var.get(),
+                "verbose_mode": self.view.verbose_var.get()
+            },
+            "time_overrides": {
+                "start_time": self.view.start_time_var.get(),
+                "toc_time": self.view.toc_time_var.get(),
+                "leap_second": self.view.leap_sec_var.get()
+            }
+        }
+
+        # Inject location data based on the selected mode
+        if mode == "static":
+            if self.view.static_coord_var.get() == "ecef":
+                metadata["generator_settings"]["location"] = {
+                    "format": "ECEF",
+                    "x": self.view.ecef_x_var.get(),
+                    "y": self.view.ecef_y_var.get(),
+                    "z": self.view.ecef_z_var.get()
+                }
+            else:
+                metadata["generator_settings"]["location"] = {
+                    "format": "LLH",
+                    "lat": self.view.llh_lat_var.get(),
+                    "lon": self.view.llh_lon_var.get(),
+                    "height": self.view.llh_hgt_var.get()
+                }
+        elif mode == "csv":
+            metadata["generator_settings"]["trajectory_file"] = self.view.csv_file_var.get()
+            metadata["generator_settings"]["csv_format"] = self.view.traj_format_var.get()
+        elif mode == "nmea":
+            metadata["generator_settings"]["trajectory_file"] = self.view.nmea_file_var.get()
+
+        # Save to disk
+        try:
+            with open(json_path, 'w') as f:
+                json.dump(metadata, f, indent=4)
+            self.view.log_line(f"Metadata sidecar created: {json_path.name}", "muted")
+        except Exception as e:
+            self.view.log_line(f"Failed to save metadata sidecar: {e}", "warn")
+    # ----------------------------------------
+
+    # --- FILE BROWSING METHODS ---
     def browse_exe(self):
-        path = filedialog.askopenfilename()
+        path = filedialog.askopenfilename(title="Select Compiler Executable")
         if path: self.view.exe_var.set(path)
-
+        
     def browse_nav(self):
-        path = filedialog.askopenfilename()
+        path = filedialog.askopenfilename(title="Select BRDC Navigation File")
         if path: self.view.nav_file_var.set(path)
-
-    def browse_output(self):
-        path = filedialog.asksaveasfilename()
-        if path: self.view.output_file_var.set(path)
-
+        
     def browse_csv(self):
-        path = filedialog.askopenfilename()
+        path = filedialog.askopenfilename(title="Select Trajectory CSV", filetypes=[("CSV Files", "*.csv")])
         if path: self.view.csv_file_var.set(path)
-
+        
     def browse_nmea(self):
-        path = filedialog.askopenfilename()
+        path = filedialog.askopenfilename(title="Select NMEA GGA File", filetypes=[("NMEA Files", "*.txt", "*.nmea", "*.log")])
         if path: self.view.nmea_file_var.set(path)
 
+    def browse_output(self):
+        path = filedialog.asksaveasfilename(
+            title="Save BIN File",
+            defaultextension=".bin",
+            initialdir=DATA_DIR_BINARY,
+            filetypes=[("Binary Files", "*.bin"), ("All Files", "*.*")]
+        )
+        if path:
+            self.view.output_file_var.set(path)
+            self._user_locked_name = True 
+
+    # --- CORE LOGIC ---
+    def clear_bins(self):
+        if self._busy: return
+        bin_dir = DATA_DIR_BINARY
+        if not bin_dir.exists():
+            messagebox.showinfo("Clear BINs", "Binary directory does not exist yet.")
+            return
+            
+        files = list(bin_dir.glob("*.bin"))
+        
+        def on_delete_confirmed(selected_files):
+            if not selected_files: return
+            deleted_count = 0
+            for file_path in selected_files:
+                try:
+                    # Delete the .bin file
+                    file_path.unlink()
+                    deleted_count += 1
+                    
+                    # --- NEW: Delete the matching .json sidecar if it exists ---
+                    sidecar = file_path.with_suffix('.json')
+                    if sidecar.exists():
+                        sidecar.unlink()
+
+                    # Clear shared state
+                    if self.state.latest_bin_path.get() == str(file_path):
+                        self.state.latest_bin_path.set("")
+                        
+                except Exception as e:
+                    self.view.log_line(f"Failed to delete {file_path.name}: {e}", "error")
+            self.view.log_line(f"Successfully deleted {deleted_count} BIN files and sidecars.", "success")
+            
+        MultiSelectDeleteDialog(self.view, "Manage BIN Files", files, on_delete_confirmed)
+
     def start_generate(self):
         if self._busy: return
         self._set_busy(True)
         
-        # Build command array safely in controller
-        cmd = [self.view.exe_var.get(), "-e", self.view.nav_file_var.get()]
-        mode = self.view.motion_mode_var.get()
-        if mode == "static":
-            if self.view.static_coord_var.get() == "ecef": cmd += ["-c", f"{self.view.ecef_x_var.get()},{self.view.ecef_y_var.get()},{self.view.ecef_z_var.get()}"]
-            else: cmd += ["-l", f"{self.view.llh_lat_var.get()},{self.view.llh_lon_var.get()},{self.view.llh_hgt_var.get()}"]
-        elif mode == "csv": cmd += ["-u" if self.view.traj_format_var.get() == "ecef" else "-x", self.view.csv_file_var.get()]
-        elif mode == "nmea": cmd += ["-g", self.view.nmea_file_var.get()]
-        
-        cmd += ["-d", self.view.duration_var.get(), "-s", self.view.sample_rate_var.get(), "-b", self.view.iq_bits_var.get(), "-o", self.view.output_file_var.get()]
-
-        threading.Thread(target=self.svc.generate, args=(
-            cmd, self.view.output_file_var.get(),
-            lambda tag, msg: self.q.put({"t": "l", "tag": tag, "m": msg}),
-            lambda s, p: self.q.put({"t": "d", "s": s, "p": p})), daemon=True).start()
-        self._poll()
-
-    def stop_generate(self):
-        self.svc.stop_process()
-
-    def _poll(self):
-        try:
-            while True:
-                msg = self.q.get_nowait()
-                if msg["t"] == "l": self.view.log_line(msg["m"], msg["tag"])
-                elif msg["t"] == "d":
-                    self._set_busy(False)
-                    if msg["s"]:
-                        self.state.latest_bin_path.set(msg["p"])
-                        self.view.log_line(f"Success: {msg['p']}", "success")
-                    return
-        except queue.Empty: pass
-        if self._busy: self.view.after(100, self._poll)
-
-    def _set_busy(self, busy):
-        self._busy = busy
-        self.view.generate_btn.config(state=tk.DISABLED if busy else tk.NORMAL)
-        self.view.stop_btn.config(state=tk.NORMAL if busy else tk.DISABLED)
-        if busy: self.view.process_progress.start(12)
-        else: self.view.process_progress.stop()
-
-    def start_generate(self):
-        if self._busy: return
-        self._set_busy(True)
-        
-        # 1. Base command (exe and nav file)
         cmd = [self.view.exe_var.get(), "-e", self.view.nav_file_var.get()]
         
-        # 2. Location & Movement Flags
         mode = self.view.motion_mode_var.get()
         if mode == "static":
             if self.view.static_coord_var.get() == "ecef": 
@@ -100,71 +217,56 @@ class GeneratorController:
         elif mode == "nmea": 
             cmd += ["-g", self.view.nmea_file_var.get()]
         
-        # 3. Hardware / Output Parameters
         cmd += ["-d", self.view.duration_var.get(), "-s", self.view.sample_rate_var.get(), "-b", self.view.iq_bits_var.get()]
         
-        # Output handling (-o)
         out_target = self.view.output_file_var.get().strip()
         if out_target and out_target != "-":
             cmd += ["-o", out_target]
         elif out_target == "-":
-            cmd += ["-o", "-"] # Stream to stdout
+            cmd += ["-o", "-"] 
 
-        # 4. Optional Time Overrides
-        if self.view.start_time_var.get().strip():
-            cmd += ["-t", self.view.start_time_var.get().strip()]
-        if self.view.toc_time_var.get().strip():
-            cmd += ["-T", self.view.toc_time_var.get().strip()]
-        if self.view.leap_sec_var.get().strip():
-            cmd += ["-L", self.view.leap_sec_var.get().strip()]
+        if self.view.start_time_var.get().strip(): cmd += ["-t", self.view.start_time_var.get().strip()]
+        if self.view.toc_time_var.get().strip():   cmd += ["-T", self.view.toc_time_var.get().strip()]
+        if self.view.leap_sec_var.get().strip():   cmd += ["-L", self.view.leap_sec_var.get().strip()]
 
-        # 5. Advanced Physics Checkboxes
-        if self.view.disable_iono_var.get():
-            cmd += ["-i"]
-        if self.view.disable_pathloss_var.get():
-            cmd += ["-p"]
-        if self.view.verbose_var.get():
-            cmd += ["-v"]
+        if self.view.disable_iono_var.get():       cmd += ["-i"]
+        if self.view.disable_pathloss_var.get():   cmd += ["-p"]
+        if self.view.verbose_var.get():            cmd += ["-v"]
 
-        # Run the thread
         threading.Thread(target=self.svc.generate, args=(
             cmd, out_target,
             lambda tag, msg: self.q.put({"t": "l", "tag": tag, "m": msg}),
             lambda s, p: self.q.put({"t": "d", "s": s, "p": p})), daemon=True).start()
         self._poll()
 
-    def clear_bins(self):
-        if self._busy:
-            return
-            
-        # 1. Find all .bin files in the directory
-        bin_dir = DATA_DIR_BINARY
-        if not bin_dir.exists():
-            messagebox.showinfo("Clear BINs", "Binary directory does not exist yet.")
-            return
-            
-        files = list(bin_dir.glob("*.bin"))
-        
-        # 2. Define what happens when the user clicks "Delete Selected" in the dialog
-        def on_delete_confirmed(selected_files):
-            if not selected_files:
-                return
-            
-            deleted_count = 0
-            for file_path in selected_files:
-                try:
-                    file_path.unlink()
-                    deleted_count += 1
-                    # Clear shared state if we just deleted the active file
-                    if self.state.latest_bin_path.get() == str(file_path):
-                        self.state.latest_bin_path.set("")
-                except Exception as e:
-                    self.view.log_line(f"Failed to delete {file_path.name}: {e}", "error")
-            
-            self.view.log_line(f"Successfully deleted {deleted_count} BIN files.", "success")
+    def stop_generate(self):
+        self.svc.stop_process()
 
-        # 3. Open the Dialog!
-        MultiSelectDeleteDialog(self.view, "Manage BIN Files", files, on_delete_confirmed)
+    def _poll(self):
+        try:
+            while True:
+                msg = self.q.get_nowait()
+                if msg["t"] == "l": 
+                    self.view.log_line(msg["m"], msg["tag"])
+                elif msg["t"] == "d":
+                    self._set_busy(False)
+                    if msg["s"]:
+                        # Upon success, update the shared state
+                        self.state.latest_bin_path.set(msg["p"])
+                        self.view.log_line(f"Success: {msg['p']}", "success")
+                        
+                        # --- NEW: Trigger the metadata save! ---
+                        if msg["p"] != "-": # Don't save sidecar if streaming to stdout
+                            self._save_metadata_sidecar(msg["p"])
+                    else:
+                        self.view.log_line(f"Failed: {msg['p']}", "error")
+                    return
+        except queue.Empty: pass
+        if self._busy: self.view.after(100, self._poll)
 
-
-    
+    def _set_busy(self, busy):
+        self._busy = busy
+        self.view.generate_btn.config(state=tk.DISABLED if busy else tk.NORMAL)
+        self.view.stop_btn.config(state=tk.NORMAL if busy else tk.DISABLED)
+        if busy: self.view.process_progress.start(12)
+        else: self.view.process_progress.stop()

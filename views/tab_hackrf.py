@@ -19,6 +19,13 @@ class HackRFView(tk.Frame):
         hdr = tk.Frame(container, bg=C_BG, padx=24, pady=14)
         hdr.grid(row=0, column=0, sticky="ew")
         tk.Label(hdr, text="HackRF One Transmitter/Receiver", font=FONT_TITLE, fg=C_TEXT, bg=C_BG).pack(side=tk.LEFT)
+
+        # --- NEW: HARDWARE STATUS INDICATOR WIDGET ---
+        self.hw_status_var = tk.StringVar(value="Checking Hardware...")
+        self.hw_status_lbl = tk.Label(hdr, textvariable=self.hw_status_var, font=("Courier New", 10, "bold"), fg=C_MUTED, bg=C_BG)
+        self.hw_status_lbl.pack(side=tk.RIGHT, pady=4)
+        # ---------------------------------------------
+        
         Divider(container).grid(row=1, column=0, sticky="ew", padx=24)
 
         panel = StyledFrame(container, padx=24, pady=16)

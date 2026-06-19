@@ -10,6 +10,7 @@ class GeneratorView(tk.Frame):
         self.ctrl = controller
         self.app_state = app_state
         
+        # Wrapped in our robust ScrollableFrame!
         self.scroll = ScrollableFrame(self)
         self.scroll.pack(fill=tk.BOTH, expand=True)
         self._build_ui(self.scroll.content)
@@ -34,10 +35,22 @@ class GeneratorView(tk.Frame):
         self.exe_var = self.app_state.compiled_exe_path
         self.nav_file_var = self.app_state.latest_brdc_path
         self.output_file_var = tk.StringVar(value=default_out)
-        
+
         self._path_row(panel, 1, "Executable Path", "Compiler Output", "The gps-sdr-sim executable from the Compiler Tab.", self.exe_var, self.ctrl.browse_exe)
         self._path_row(panel, 2, "Navigation File (-e)", "Required Ephemeris", "Specifies the path to your RINEX navigation file.", self.nav_file_var, self.ctrl.browse_nav)
-        self._path_row(panel, 3, "Output File (-o)", "Custom Output Name", "If empty, defaults to gpssim.bin. Typing '-' streams directly to standard output.", self.output_file_var, self.ctrl.browse_output)
+
+        # --- AUTO-NAMING OUTPUT FILE ROW ---
+        FieldLabel(panel, "Output File (-o)", "Smart Output Name", "Auto-generates based on parameters. Click Auto-Name to reset.").grid(row=3, column=0, sticky="w", pady=5, padx=(0, 8))
+        f_out = tk.Frame(panel, bg=C_PANEL)
+        f_out.grid(row=3, column=1, sticky="ew", pady=5, padx=(8, 6))
+        f_out.columnconfigure(0, weight=1)
+        
+        StyledEntry(f_out, textvariable=self.output_file_var).grid(row=0, column=0, sticky="ew")
+        
+        btn_frame = tk.Frame(f_out, bg=C_PANEL)
+        btn_frame.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        GhostButton(btn_frame, text="Auto-Name", command=self.ctrl.force_auto_name).pack(side=tk.LEFT, padx=(0, 4))
+        GhostButton(btn_frame, text="Browse", command=self.ctrl.browse_output).pack(side=tk.LEFT)
 
         # --- 2. TRAJECTORY & MOTION SECTION ---
         SectionLabel(panel, "2. Location and Movement").grid(row=4, column=0, columnspan=3, sticky="w", pady=(16, 8))
@@ -68,7 +81,6 @@ class GeneratorView(tk.Frame):
         self.toc_time_var = tk.StringVar(value="")
         self.leap_sec_var = tk.StringVar(value="")
 
-        # Row 1 of Settings
         FieldLabel(sig_box, "Duration (-d)", "Simulation Length", "Length in seconds. Max static is 86,400s (24h), dynamic is 300s (5m).").grid(row=0, column=0, sticky="w", pady=4)
         tk.Spinbox(sig_box, from_=1, to=86400, textvariable=self.duration_var, bg=C_ENTRY_BG, fg=C_TEXT, buttonbackground=C_BORDER, relief=tk.FLAT, width=12).grid(row=0, column=1, sticky="w", pady=4, padx=(8, 20))
 
@@ -78,7 +90,6 @@ class GeneratorView(tk.Frame):
         FieldLabel(sig_box, "I/Q Bits (-b)", "Bit Depth", "1, 8, or 16 bits.\nHackRF = 8\nBladeRF/USRP = 16").grid(row=0, column=4, sticky="w", pady=4)
         ttk.Combobox(sig_box, textvariable=self.iq_bits_var, values=["1", "8", "16"], state="readonly", width=5).grid(row=0, column=5, sticky="w", pady=4, padx=(8, 0))
 
-        # Row 2 of Settings
         FieldLabel(sig_box, "Start Time (-t)", "Override Start", "Format: YYYY/MM/DD,hh:mm:ss\nOverrides the exact day and clock time the simulation begins.").grid(row=1, column=0, sticky="w", pady=4)
         StyledEntry(sig_box, textvariable=self.start_time_var, width=18).grid(row=1, column=1, sticky="w", pady=4, padx=(8, 20))
 
@@ -111,16 +122,16 @@ class GeneratorView(tk.Frame):
         # --- ACTION BUTTONS ---
         action = tk.Frame(panel, bg=C_PANEL)
         action.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        
         self.generate_btn = PrimaryButton(action, text="Generate .bin", command=self.ctrl.start_generate)
         self.generate_btn.pack(side=tk.LEFT)
         
         self.stop_btn = GhostButton(action, text="Stop", command=self.ctrl.stop_generate, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=(8, 0))
         
-        # --- NEW CLEAR BINS BUTTON ---
+        # CLEAR BINS BUTTON
         self.clear_btn = GhostButton(action, text="Clear BINs", command=self.ctrl.clear_bins)
         self.clear_btn.pack(side=tk.LEFT, padx=(8, 0))
-        # -----------------------------
         
         self.process_progress = ttk.Progressbar(action, mode="indeterminate", style="Accent.Horizontal.TProgressbar", length=170)
         self.process_progress.pack(side=tk.RIGHT, padx=(8, 0))
