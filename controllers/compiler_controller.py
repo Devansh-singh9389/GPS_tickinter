@@ -1,0 +1,143 @@
+import os
+import threading
+import queue
+import tkinter as tk
+import shutil
+import pathlib
+from tkinter import filedialog, messagebox
+from services.compiler_service import CompilerService
+from views.tab_compiler import CompilerView
+from core.theme import OPTIMIZATION_OPTIONS
+from views.components import MultiSelectDeleteDialog  # <-- New Dialog Import
+
+class CompilerController:
+    def __init__(self, parent, app_state):
+        self.state = app_state
+        self.svc = CompilerService()
+        self.q = queue.Queue()
+        self.view = CompilerView(parent, self)
+        self.view.pack(fill=tk.BOTH, expand=True)
+        self._busy = False
+
+    def browse_source(self):
+        path = filedialog.askdirectory()
+        if path: 
+            self.view.src_dir_var.set(path)
+
+    def browse_output_dir(self):
+        path = filedialog.askdirectory()
+        if path: 
+            self.view.output_dir_var.set(path)
+
+    def start_compile(self):
+        if self._busy: 
+            return
+        self._set_busy(True)
+        opt = OPTIMIZATION_OPTIONS.get(self.view.optimization_var.get(), "-O3")
+        
+        threading.Thread(target=self.svc.compile_sim, args=(
+            self.view.src_dir_var.get(), 
+            self.view.output_dir_var.get(), 
+            self.view.output_exe_var.get(),
+            int(self.view.user_motion_size_var.get()), 
+            self.view.float_carr_phase_var.get(),
+            int(self.view.max_sat_var.get()), 
+            int(self.view.max_chan_var.get()), 
+            opt,
+            self.view.get_active_cflags(), 
+            self.view.clean_before_build_var.get(),
+            self.view.build_mode_var.get(),
+            lambda tag, msg: self.q.put({"t": "l", "tag": tag, "m": msg}),
+            lambda s, p: self.q.put({"t": "d", "s": s, "p": p})
+        ), daemon=True).start()
+        
+        self._poll()
+
+    def _poll(self):
+        try:
+            while True:
+                msg = self.q.get_nowait()
+                if msg["t"] == "l": 
+                    self.view.log_line(msg["m"], msg["tag"])
+                elif msg["t"] == "d":
+                    self._set_busy(False)
+                    if msg["s"]:
+                        self.state.compiled_exe_path.set(msg["p"])
+                        self.view.exe_status_var.set(f"Compiled: {msg['p']}")
+                        self.view.log_line(f"Success: {msg['p']}", "success")
+                    else:
+                        self.view.log_line(f"ERROR: {msg['p']}", "error")
+                    return
+        except queue.Empty: 
+            pass
+        if self._busy: 
+            self.view.after(100, self._poll)
+
+    def _set_busy(self, busy):
+        self._busy = busy
+        self.view.compile_btn.config(state=tk.DISABLED if busy else tk.NORMAL)
+        if busy: 
+            self.view.process_progress.start(12)
+        else: 
+            self.view.process_progress.stop()
+
+    def clear_compilation(self):
+        """Opens the Multi-Select Dialog to clear compiled executables."""
+        if self._busy:
+            return
+            
+        output_dir_text = self.view.output_dir_var.get().strip()
+        if not output_dir_text:
+            messagebox.showwarning("Clear compilation", "Select an output directory first.")
+            return
+            
+        compile_dir = pathlib.Path(output_dir_text).expanduser().resolve()
+
+        if not compile_dir.exists():
+            messagebox.showinfo("Clear Compilation", "Output directory does not exist yet.")
+            return
+            
+        # Get all files in the output directory
+        files = [f for f in compile_dir.iterdir() if f.is_file()]
+        
+        def on_delete_confirmed(selected_files):
+            if not selected_files:
+                return
+            
+            deleted_count = 0
+            for file_path in selected_files:
+                try:
+                    file_path.unlink()
+                    deleted_count += 1
+                    
+                    # If we deleted the active executable, clear the state
+                    if self.state.compiled_exe_path.get() == str(file_path):
+                        self.state.compiled_exe_path.set("")
+                        self.view.exe_status_var.set("Compiled executable cleared")
+                except Exception as e:
+                    self.view.log_line(f"Failed to delete {file_path.name}: {e}", "error")
+            
+            self.view.log_line(f"Successfully deleted {deleted_count} compiled files.", "success")
+
+        # Open the Custom Checkbox Dialog
+        MultiSelectDeleteDialog(self.view, "Manage Compiled Files", files, on_delete_confirmed)
+
+    def restore_header(self):
+        source_dir_text = self.view.src_dir_var.get().strip()
+        
+        source_dir = pathlib.Path(source_dir_text).expanduser()
+        header_path = source_dir / "gpssim.h"
+        backup_path = source_dir / "gpssim.h.codex-backup"
+        
+        if not backup_path.exists():
+            messagebox.showinfo("Header backup", "No gpssim.h backup was found in the selected source directory.")
+            return
+            
+        if not messagebox.askyesno("Restore gpssim.h", "Restore gpssim.h from gpssim.h.codex-backup?"):
+            return
+            
+        try:
+            shutil.copy2(backup_path, header_path)
+            self.view.log_line(f"Restored gpssim.h from backup: {backup_path}", "success")
+        except OSError as exc:
+            messagebox.showerror("Header restore", f"Could not restore gpssim.h: {exc}")
