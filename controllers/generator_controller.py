@@ -135,7 +135,6 @@ class GeneratorController:
             self.view.log_line(f"Metadata sidecar created: {json_path.name}", "muted")
         except Exception as e:
             self.view.log_line(f"Failed to save metadata sidecar: {e}", "warn")
-    # ----------------------------------------
 
     # --- FILE BROWSING METHODS ---
     def browse_exe(self):
@@ -233,12 +232,17 @@ class GeneratorController:
         if self.view.disable_pathloss_var.get():   cmd += ["-p"]
         if self.view.verbose_var.get():            cmd += ["-v"]
 
-        threading.Thread(target=self.svc.generate, args=(
-            cmd, out_target,
-            lambda tag, msg: self.q.put({"t": "l", "tag": tag, "m": msg}),
-            lambda s, p: self.q.put({"t": "d", "s": s, "p": p})), daemon=True).start()
-        self._poll()
+        # Grabbing duration so the service can calculate % math
+        duration_val = float(self.view.duration_var.get())
 
+        threading.Thread(target=self.svc.generate, args=(
+            cmd, out_target, duration_val,
+            lambda tag, msg: self.q.put({"t": "l", "tag": tag, "m": msg}),
+            lambda s, p: self.q.put({"t": "d", "s": s, "p": p}),
+            lambda v: self.q.put({"t": "p", "v": v}) # NEW: The percentage pipeline!
+        ), daemon=True).start()
+        
+        self._poll()
     def stop_generate(self):
         self.svc.stop_process()
 
@@ -248,15 +252,20 @@ class GeneratorController:
                 msg = self.q.get_nowait()
                 if msg["t"] == "l": 
                     self.view.log_line(msg["m"], msg["tag"])
+                
+                # --- FIXED: Update the DoubleVar instead of the widget ---
+                elif msg["t"] == "p":
+                    pct = int(msg["v"] * 100)
+                    self.view.progress_var.set(pct) 
+                    self.view.progress_label.config(text=f"Generating... {pct}%")
+                # ---------------------------------------------------------
+                
                 elif msg["t"] == "d":
                     self._set_busy(False)
                     if msg["s"]:
-                        # Upon success, update the shared state
                         self.state.latest_bin_path.set(msg["p"])
                         self.view.log_line(f"Success: {msg['p']}", "success")
-                        
-                        # --- NEW: Trigger the metadata save! ---
-                        if msg["p"] != "-": # Don't save sidecar if streaming to stdout
+                        if msg["p"] != "-": 
                             self._save_metadata_sidecar(msg["p"])
                     else:
                         self.view.log_line(f"Failed: {msg['p']}", "error")
@@ -268,5 +277,14 @@ class GeneratorController:
         self._busy = busy
         self.view.generate_btn.config(state=tk.DISABLED if busy else tk.NORMAL)
         self.view.stop_btn.config(state=tk.NORMAL if busy else tk.DISABLED)
-        if busy: self.view.process_progress.start(12)
-        else: self.view.process_progress.stop()
+        
+        # IMPORTANT: There are absolutely no .start() or .stop() commands here!
+        if not busy:
+            self.view.progress_var.set(0.0)
+            self.view.progress_label.config(text="Idle")
+        else:
+            self.view.progress_var.set(0.0)
+            self.view.progress_label.config(text="Initializing...")
+
+
+

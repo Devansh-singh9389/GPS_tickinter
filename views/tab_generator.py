@@ -133,8 +133,18 @@ class GeneratorView(tk.Frame):
         self.clear_btn = GhostButton(action, text="Clear BINs", command=self.ctrl.clear_bins)
         self.clear_btn.pack(side=tk.LEFT, padx=(8, 0))
         
-        self.process_progress = ttk.Progressbar(action, mode="indeterminate", style="Accent.Horizontal.TProgressbar", length=170)
-        self.process_progress.pack(side=tk.RIGHT, padx=(8, 0))
+        # --- FIXED: LIVE PERCENTAGE READOUT WITH DOUBLEVAR ---
+        pb_frame = tk.Frame(action, bg=C_PANEL)
+        pb_frame.pack(side=tk.RIGHT, padx=(8, 0), fill=tk.X, expand=True)
+        
+        self.progress_label = tk.Label(pb_frame, text="Idle", fg=C_MUTED, bg=C_PANEL, font=("Courier New", 9, "bold"))
+        self.progress_label.pack(side=tk.TOP, anchor="e", pady=(0, 2))
+        
+        # We now attach a tk.DoubleVar() to force the UI to render updates immediately
+        self.progress_var = tk.DoubleVar(value=0.0)
+        self.process_progress = ttk.Progressbar(pb_frame, variable=self.progress_var, mode="determinate", maximum=100.0, style="Accent.Horizontal.TProgressbar")
+        self.process_progress.pack(side=tk.BOTTOM, fill=tk.X)
+        # -----------------------------------------------------
 
         # Log
         log_frame = tk.Frame(container, bg=C_BG, padx=24)
@@ -182,3 +192,4 @@ class GeneratorView(tk.Frame):
         self.log.insert(tk.END, f"[{ts}]  {msg}\n", tag)
         self.log.see(tk.END)
         self.log.config(state=tk.DISABLED)
+
