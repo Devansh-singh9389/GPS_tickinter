@@ -32,7 +32,7 @@ class CompilerView(tk.Frame):
         SectionLabel(panel, "Compiler Configuration").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         # Core Variables
-        self.src_dir_var = tk.StringVar(value=str(Path.home() / "Code" / "gps-sdr-sim"))
+        self.src_dir_var = tk.StringVar(value=str(Path.home() / "Code" / "TRY 1" / "gps-sdr-sim"))
         self.user_motion_size_var = tk.StringVar(value="3000")
         self.float_carr_phase_var = tk.BooleanVar(value=False)
         self.max_sat_var = tk.StringVar(value="32")
@@ -146,7 +146,7 @@ class CompilerView(tk.Frame):
 
     def _path_row(self, parent, row, label, tt_title, tt_desc, var, command):
         FieldLabel(parent, label, tt_title, tt_desc).grid(row=row, column=0, sticky="w", pady=5, padx=(0, 8))
-        StyledEntry(parent, textvariable=var).grid(row=row, column=1, sticky="ew", pady=5, padx=(8, 6))
+        StyledEntry(parent, textvariable=var, width=120).grid(row=row, column=1, sticky="ew", pady=5, padx=(8, 6))
         GhostButton(parent, text="Browse", command=command).grid(row=row, column=2, sticky="e", pady=5)
 
     def _build_header_config(self, parent, row):

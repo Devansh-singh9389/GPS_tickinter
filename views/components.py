@@ -172,7 +172,7 @@ class MultiSelectDeleteDialog(tk.Toplevel):
     def __init__(self, parent, title, files, on_confirm):
         super().__init__(parent)
         self.title(title)
-        self.geometry("450x300")
+        self.geometry("1080x720")
         self.configure(bg=C_BG)
         self.transient(parent) # Tie to main window
         self.grab_set()        # Block main window until closed

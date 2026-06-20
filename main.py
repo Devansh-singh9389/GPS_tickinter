@@ -1,15 +1,16 @@
-import datetime  # <-- Fix 1: Changed to import the whole module
+import datetime
 import sys
 import os
+import platform
+import shutil
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 # Ensure the root is on path for absolute imports
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# <-- Fix 2: Added C_TEXT, FONT_HEADER, and FONT_CLOCK
 from core.theme import C_BG, C_TAB_BG, C_MUTED, C_PANEL, C_ACCENT, FONT_BODY, C_BORDER, C_TEXT, FONT_HEADER, FONT_CLOCK
 from models.app_state import AppState
 from controllers.brdc_controller import BRDCController
@@ -17,10 +18,48 @@ from controllers.compiler_controller import CompilerController
 from controllers.generator_controller import GeneratorController
 from controllers.hackrf_controller import HackRFController
 
+def run_preflight_check():
+    """Checks if the required OS tools are installed before launching the app."""
+    missing_tools = []
+    
+    # shutil.which() silently checks if a command exists in the system PATH
+    if shutil.which("gcc") is None:
+        missing_tools.append("GCC Compiler (gcc)")
+    if shutil.which("hackrf_info") is None:
+        missing_tools.append("HackRF Tools (hackrf_info)")
+
+    if not missing_tools:
+        return True # Everything is perfect!
+
+    # If tools are missing, determine the OS to give precise instructions
+    os_name = platform.system()
+    instructions = ""
+    
+    if os_name == "Linux":
+        instructions = "Run this in your terminal:\nsudo apt install build-essential hackrf"
+    elif os_name == "Darwin": # macOS
+        instructions = "Run this in your terminal:\nxcode-select --install\nbrew install hackrf"
+    elif os_name == "Windows":
+        instructions = ("1. Install MSYS2/MinGW and add gcc to your PATH.\n"
+                        "2. Download HackRF Windows binaries and add to PATH.\n"
+                        "3. Use Zadig to install the WinUSB driver for the HackRF.")
+
+    root = tk.Tk()
+    root.withdraw() # Hide the main window
+    messagebox.showerror(
+        "Missing Dependencies", 
+        f"Your system is missing the following required tools:\n\n"
+        f"{', '.join(missing_tools)}\n\n"
+        f"How to fix this on {os_name}:\n{instructions}"
+    )
+    root.destroy()
+    return False
+
+
 class Application(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("GNSS Signal Simulator Lab")
+        self.title("509 Army WSP")
         self.geometry("1050x720")
         self.configure(bg=C_BG)
         
@@ -31,9 +70,9 @@ class Application(tk.Tk):
         self._configure_styles()
         
         # 3. Build Layout
-        self._build_header()   # <-- Fix 3: Header MUST be built first
+        self._build_header()
         self._start_clock()
-        self._build_layout()   # <-- Tabs are built after the header
+        self._build_layout()
 
     def _build_header(self) -> None:
         hdr = tk.Frame(self, bg=C_BG, pady=12, padx=20)
@@ -53,20 +92,20 @@ class Application(tk.Tk):
         titles.pack(side=tk.LEFT)
         tk.Label(
             titles,
-            text="GNSS Signal Simulator Lab",
+            text="509 Army Base WKSP",
             font=FONT_HEADER,
             fg=C_TEXT,
             bg=C_BG,
         ).pack(anchor=tk.W)
         tk.Label(
             titles,
-            text="RF Test & Navigation Data Toolchain",
+            text="GNSS SPOOFER",
             font=FONT_BODY,
             fg=C_MUTED,
             bg=C_BG,
         ).pack(anchor=tk.W)
 
-        # Right: live UTC clock (the signature design element)
+        # Right: live UTC clock
         right = tk.Frame(hdr, bg=C_BG)
         right.pack(side=tk.RIGHT)
         tk.Label(right, text="UTC", font=("Courier New", 9), fg=C_MUTED, bg=C_BG).pack()
@@ -121,6 +160,9 @@ class Application(tk.Tk):
         notebook.add(t4, text="  HackRF Transfer  ")
         self.hackrf_ctrl = HackRFController(t4, self.app_state)
 
+# --- EXECUTION BLOCK MUST ALWAYS BE AT THE VERY BOTTOM ---
 if __name__ == "__main__":
-    app = Application()
-    app.mainloop()
+    # Only launch the massive Tkinter UI if the computer has the required SDR tools
+    if run_preflight_check():
+        app = Application()
+        app.mainloop()
