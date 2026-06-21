@@ -16,27 +16,43 @@ SETTINGS_FILE = PROJECT_ROOT / "settings.json"
 for directory in [DATA_DIR_BRDCS , DATA_DIR_COMPILED, DATA_DIR_BINARY, ASSETS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
+
+#------Default Settings------
+Default_Settings = {
+
+    #general settings
+    "nasa_username": "Devanshearthdata",
+    "nasa_password": "Devanshsingh@9389",
+    "auto_save_metadata": True,
+    "smart_auto_naming": True,
+
+    #professional settings
+    "default_optimization_level": "Recommended Standard",
+    "hardware_poll_rate_ms": 3000,
+    "verbose_logging": False,
+
+    #apperance settings
+    "theme_mode" : "Dark"
+}
+
 # --- Local Memory / Cache Functions ---
 def load_settings() -> dict:
-    """Load settings from the local JSON file. Return defaults if missing."""
-    if SETTINGS_FILE.exists():
-        try:
-            with open(SETTINGS_FILE, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            pass # Fallback to defaults if file is corrupted
-            
-    # Default fallback values
-    return {
-        "nasa_username": "Devanshearthdata",
-        "nasa_password": "Devanshsingh@9389"
-    }
-
-def save_settings(username: str, password: str):
-    """Save the credentials back to the local JSON file."""
-    settings = load_settings()
-    settings["nasa_username"] = username
-    settings["nasa_password"] = password
+    if not SETTINGS_FILE.exists() : 
+        return Default_Settings
     
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=4)
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            user_settings = json.load(f)
+        
+        merged_settings = Default_Settings.copy()
+        merged_settings.update(user_settings)
+        return merged_settings
+    except Exception as e:
+        return Default_Settings.copy()
+    
+def save_settings(settings: dict):
+    try:
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(settings, f, indent=4)
+    except Exception as e:
+        print(f"CRITICAL ERROR: Could not save settings: {e}")

@@ -1,26 +1,34 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 from core.theme import *
-from views.components import StyledFrame, SectionLabel, FieldLabel, StyledEntry, PrimaryButton, GhostButton, Divider
+from views.components import StyledFrame, SectionLabel, FieldLabel, StyledEntry, PrimaryButton, GhostButton, Divider, \
+    ScrollableFrame
 from core.config import load_settings
 
 class BRDCDownloaderView(tk.Frame):
-    def __init__(self, master, controller):
+    def __init__(self, master, controller, app_state):
         super().__init__(master, bg=C_BG)
         self.ctrl = controller
-        self._build_ui()
 
-    def _build_ui(self):
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(4, weight=1)
+        # --- FIXED: Save it so the rest of the file can use it! ---
+        self.app_state = app_state
 
-        hdr = tk.Frame(self, bg=C_BG, padx=24, pady=14)
+        self.scroll = ScrollableFrame(self)
+        self.scroll.pack(fill=tk.BOTH, expand=True)
+        self._build_ui(self.scroll.content)
+
+    def _build_ui(self, container):
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(4, weight=1)
+
+        hdr = tk.Frame(container, bg=C_BG, padx=24, pady=14)
         hdr.grid(row=0, column=0, sticky="ew")
         tk.Label(hdr, text="Broadcast Ephemeris Downloader", font=FONT_TITLE, fg=C_TEXT, bg=C_BG).pack(side=tk.LEFT)
-        tk.Label(hdr, text="Source: NASA CDDIS  •  RINEX 2 (.yyN)", font=FONT_BODY, fg=C_MUTED, bg=C_BG).pack(side=tk.RIGHT)
-        Divider(self).grid(row=1, column=0, sticky="ew", padx=24)
+        tk.Label(hdr, text="Source: NASA CDDIS  •  RINEX 2 (.yyN)", font=FONT_BODY, fg=C_MUTED, bg=C_BG).pack(
+            side=tk.RIGHT)
+        Divider(container).grid(row=1, column=0, sticky="ew", padx=24)
 
-        config_row = tk.Frame(self, bg=C_BG)
+        config_row = tk.Frame(container, bg=C_BG)
         config_row.grid(row=2, column=0, sticky="ew", padx=24, pady=12)
         config_row.columnconfigure(0, weight=1)
         config_row.columnconfigure(1, weight=1)
@@ -28,15 +36,15 @@ class BRDCDownloaderView(tk.Frame):
         self._build_credentials_panel(config_row)
         self._build_date_panel(config_row)
 
-        # --- FIXED ACTION ROW ---
-        action_row = tk.Frame(self, bg=C_BG, padx=24, pady=10)
+        # --- ACTION ROW ---
+        action_row = tk.Frame(container, bg=C_BG, padx=24, pady=10)
         action_row.grid(row=3, column=0, sticky="ew")
-        action_row.columnconfigure(2, weight=1) 
+        action_row.columnconfigure(2, weight=1)
 
-        self.download_btn = PrimaryButton(action_row, text="⬇  Download BRDC File", command=self.ctrl.start_download)
+        self.download_btn = PrimaryButton(action_row, text="↓  Download BRDC File", command=self.ctrl.start_download)
         self.download_btn.grid(row=0, column=0, sticky="w")
-        
-        self.clear_btn = GhostButton(action_row, text="🗑 Clear BRDCs", command=self.ctrl.clear_brdc_files)
+
+        self.clear_btn = GhostButton(action_row, text="✖ Clear BRDCs", command=self.ctrl.clear_brdc_files)
         self.clear_btn.grid(row=0, column=1, sticky="w", padx=(12, 0))
 
         pb_frame = tk.Frame(action_row, bg=C_BG)
@@ -44,13 +52,14 @@ class BRDCDownloaderView(tk.Frame):
         pb_frame.columnconfigure(0, weight=1)
 
         self.progress_var = tk.DoubleVar(value=0.0)
-        self.progress_bar = ttk.Progressbar(pb_frame, variable=self.progress_var, maximum=1.0, style="Accent.Horizontal.TProgressbar", length=200)
+        self.progress_bar = ttk.Progressbar(pb_frame, variable=self.progress_var, maximum=1.0,
+                                            style="Accent.Horizontal.TProgressbar", length=200)
         self.progress_bar.grid(row=0, column=0, sticky="ew")
         self.progress_label = tk.Label(pb_frame, text="Idle", fg=C_MUTED, bg=C_BG, font=("Courier New", 9))
         self.progress_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
         # ------------------------
 
-        log_frame = tk.Frame(self, bg=C_BG, padx=24)
+        log_frame = tk.Frame(container, bg=C_BG, padx=24)
         log_frame.grid(row=4, column=0, sticky="nsew", pady=(0, 16))
         log_frame.rowconfigure(1, weight=1)
         log_frame.columnconfigure(0, weight=1)
@@ -60,7 +69,8 @@ class BRDCDownloaderView(tk.Frame):
         SectionLabel(header, "Activity Log", bg=C_BG).pack(side=tk.LEFT)
         GhostButton(header, text="Clear", command=self.clear_log, bg=C_BG).pack(side=tk.RIGHT)
 
-        self.log = scrolledtext.ScrolledText(log_frame, height=10, bg=C_ENTRY_BG, fg=C_TEXT, font=FONT_MONO, relief=tk.FLAT, state=tk.DISABLED)
+        self.log = scrolledtext.ScrolledText(log_frame, height=10, bg=C_ENTRY_BG, fg=C_TEXT, font=FONT_MONO,
+                                             relief=tk.FLAT, state=tk.DISABLED)
         self.log.grid(row=1, column=0, sticky="nsew")
         self.log.tag_config("success", foreground=C_SUCCESS)
         self.log.tag_config("error", foreground=C_ERROR)
@@ -74,15 +84,17 @@ class BRDCDownloaderView(tk.Frame):
         panel.columnconfigure(1, weight=1)
 
         settings = load_settings()
+        saved_user = self.app_state.get_setting("nasa_username", "")
+        saved_pass = self.app_state.get_setting("nasa_password", "")
 
         SectionLabel(panel, "NASA Earthdata Credentials").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
         
         FieldLabel(panel, "Username", "Earthdata Account", "Required to access NASA CDDIS archives.\nYou can register for free at: urs.earthdata.nasa.gov").grid(row=1, column=0, sticky="w", pady=4)
-        self.username_var = tk.StringVar(value=settings.get("nasa_username", ""))
+        self.username_var = tk.StringVar(value=saved_user)
         StyledEntry(panel, textvariable=self.username_var, width=26).grid(row=1, column=1, columnspan=2, sticky="ew", pady=4, padx=(8, 0))
 
         FieldLabel(panel, "Password").grid(row=2, column=0, sticky="w", pady=4)
-        self.password_var = tk.StringVar(value=settings.get("nasa_password", ""))
+        self.password_var = tk.StringVar(value=saved_pass)
         self.pw_entry = StyledEntry(panel, textvariable=self.password_var, show="●", width=26)
         self.pw_entry.grid(row=2, column=1, sticky="ew", pady=4, padx=(8, 4))
 

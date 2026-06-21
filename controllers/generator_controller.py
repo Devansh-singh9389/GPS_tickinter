@@ -3,8 +3,9 @@ import queue
 import tkinter as tk
 import pathlib
 import re
-import json       # <-- NEW
-import datetime   # <-- NEW
+import json
+import datetime
+import shutil
 from tkinter import filedialog, messagebox
 from services.generator_service import GeneratorService
 from views.tab_generator import GeneratorView
@@ -42,6 +43,8 @@ class GeneratorController:
 
     def generate_auto_name(self, *args):
         """Builds a smart filename based on current UI parameters."""
+        if not self.state.get_setting("auto_name", True):
+            return
         if self._user_locked_name or not hasattr(self, 'view'):
             return
             
@@ -200,29 +203,68 @@ class GeneratorController:
 
     def start_generate(self):
         if self._busy: return
+
+        # --- GUARDRAIL 3: THE "FAT FINGER" INPUT VALIDATOR ---
+        try:
+            duration_val = float(self.view.duration_var.get().strip())
+            sample_rate_val = float(self.view.sample_rate_var.get().strip())
+            bits_val = int(self.view.iq_bits_var.get().strip())
+        except ValueError:
+            messagebox.showerror("Invalid Input",
+                                 "Duration, Sample Rate, and I/Q Bits must be valid numbers (e.g., 300, 2600000, 16).")
+            return
+
+        if duration_val <= 0 or sample_rate_val <= 0:
+            messagebox.showerror("Invalid Input", "Duration and Sample Rate must be strictly greater than zero.")
+            return
+
+        # --- GUARDRAIL 2: THE "DISK SPACE BOMB" CHECKER ---
+        # Calculate exactly how massive this binary file will be.
+        # Math: Sample_Rate * 2 (I & Q) * (Bits / 8) * Duration
+        bytes_per_sample = bits_val / 8
+        bytes_per_second = sample_rate_val * 2 * bytes_per_sample
+        estimated_total_bytes = bytes_per_second * duration_val
+
+        # Ask the Operating System for the actual free space on the drive
+        free_space = shutil.disk_usage(DATA_DIR_BINARY).free
+
+        # We require the estimated size PLUS a 500 MB safety buffer so the OS doesn't crash
+        if free_space < (estimated_total_bytes + (500 * 1024 * 1024)):
+            req_gb = estimated_total_bytes / (1024 ** 3)
+            free_gb = free_space / (1024 ** 3)
+            messagebox.showerror(
+                "Insufficient Disk Space",
+                f"SAFETY ABORT: This simulation will generate a {req_gb:.2f} GB binary file.\n\n"
+                f"You only have {free_gb:.2f} GB of free space available on your drive.\n"
+                "Please free up some hard drive space or reduce the simulation duration."
+            )
+            return
+        # ----------------------------------------------------
+
         self._set_busy(True)
-        
+
         cmd = [self.view.exe_var.get(), "-e", self.view.nav_file_var.get()]
-        
+
         mode = self.view.motion_mode_var.get()
         if mode == "static":
-            if self.view.static_coord_var.get() == "ecef": 
+            if self.view.static_coord_var.get() == "ecef":
                 cmd += ["-c", f"{self.view.ecef_x_var.get()},{self.view.ecef_y_var.get()},{self.view.ecef_z_var.get()}"]
-            else: 
-                cmd += ["-l", f"{self.view.llh_lat_var.get()},{self.view.llh_lon_var.get()},{self.view.llh_hgt_var.get()}"]
-        elif mode == "csv": 
+            else:
+                cmd += ["-l",
+                        f"{self.view.llh_lat_var.get()},{self.view.llh_lon_var.get()},{self.view.llh_hgt_var.get()}"]
+        elif mode == "csv":
             flag = "-u" if self.view.traj_format_var.get() == "ecef" else "-x"
             cmd += [flag, self.view.csv_file_var.get()]
-        elif mode == "nmea": 
+        elif mode == "nmea":
             cmd += ["-g", self.view.nmea_file_var.get()]
-        
-        cmd += ["-d", self.view.duration_var.get(), "-s", self.view.sample_rate_var.get(), "-b", self.view.iq_bits_var.get()]
-        
+
+        cmd += ["-d", str(duration_val), "-s", str(sample_rate_val), "-b", str(bits_val)]
+
         out_target = self.view.output_file_var.get().strip()
         if out_target and out_target != "-":
             cmd += ["-o", out_target]
         elif out_target == "-":
-            cmd += ["-o", "-"] 
+            cmd += ["-o", "-"]
 
         if self.view.start_time_var.get().strip(): cmd += ["-t", self.view.start_time_var.get().strip()]
         if self.view.toc_time_var.get().strip():   cmd += ["-T", self.view.toc_time_var.get().strip()]
@@ -230,19 +272,21 @@ class GeneratorController:
 
         if self.view.disable_iono_var.get():       cmd += ["-i"]
         if self.view.disable_pathloss_var.get():   cmd += ["-p"]
-        if self.view.verbose_var.get():            cmd += ["-v"]
 
-        # Grabbing duration so the service can calculate % math
-        duration_val = float(self.view.duration_var.get())
+        # Grab Verbose state straight from global Settings, unless the user manually checked it on the UI
+        global_verbose = self.state.get_setting("verbose_logging", False)
+        if self.view.verbose_var.get() or global_verbose:
+            cmd += ["-v"]
 
         threading.Thread(target=self.svc.generate, args=(
             cmd, out_target, duration_val,
             lambda tag, msg: self.q.put({"t": "l", "tag": tag, "m": msg}),
             lambda s, p: self.q.put({"t": "d", "s": s, "p": p}),
-            lambda v: self.q.put({"t": "p", "v": v}) # NEW: The percentage pipeline!
+            lambda v: self.q.put({"t": "p", "v": v})
         ), daemon=True).start()
-        
+
         self._poll()
+
     def stop_generate(self):
         self.svc.stop_process()
 

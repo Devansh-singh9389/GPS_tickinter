@@ -18,7 +18,7 @@ class HackRFController:
         self._poll_hardware()
 
     def _poll_hardware(self):
-        """Spawns a background thread to check for hardware connection states."""
+        #Spawns a background thread to check for hardware connection states.
         def check():
             connected = self.svc.check_hardware()
             # Safely push the UI update execution back to the primary main thread
@@ -26,10 +26,11 @@ class HackRFController:
                 self.view.after(0, lambda: self._update_hardware_ui(connected))
         
         threading.Thread(target=check, daemon=True).start()
+        poll_rate = self.state.get_setting("hardware_poll_rate_ms", 3000)
         
         # Reschedule next check in 3000 milliseconds (3 seconds)
         if hasattr(self, 'view') and self.view.winfo_exists():
-            self.view.after(3000, self._poll_hardware)
+            self.view.after(poll_rate, self._poll_hardware)
 
     def _update_hardware_ui(self, connected: bool):
         """Updates the visual color state of the indicator string inside the header."""

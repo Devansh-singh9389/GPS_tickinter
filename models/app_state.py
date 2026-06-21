@@ -1,21 +1,20 @@
 import tkinter as tk
-from pathlib import Path
-from core.config import *
+from core.config import load_settings
 
 class AppState:
-    """Shared application state accessible by all tabs."""
     def __init__(self):
-        # We use tk.StringVar so the UI can reactively update when these change
-        self.latest_brdc_path = tk.StringVar(value=self._find_latest_brdc_file())
-        self.compiled_exe_path = tk.StringVar(value="")
-        self.latest_bin_path = tk.StringVar(value="")
-
-    @staticmethod
-    def _find_latest_brdc_file() -> str:
+        # Shared File Paths
+        self.latest_brdc_path = tk.StringVar()
+        self.compiled_exe_path = tk.StringVar()
+        self.latest_bin_path = tk.StringVar()
         
-        candidates = sorted(
-            DATA_DIR_BRDCS.glob("brdc*.*n"),
-            key=lambda p: p.stat().st_mtime if p.exists() else 0,
-            reverse=True,
-        )
-        return str(candidates[0]) if candidates else ""
+        # --- NEW: Live Settings Memory ---
+        self.settings = load_settings()
+
+    def get_setting(self, key: str, default=None):
+        """Safely fetch a setting from live memory."""
+        return self.settings.get(key, default)
+
+    def update_settings(self, new_settings: dict):
+        """Updates live memory immediately when the user clicks 'Save'."""
+        self.settings.update(new_settings)

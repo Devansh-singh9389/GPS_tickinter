@@ -5,6 +5,7 @@ import platform
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox
+from views.dialog_settings import SettingsDialog
 
 # Ensure the root is on path for absolute imports
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -62,17 +63,32 @@ class Application(tk.Tk):
         self.title("509 Army WSP")
         self.geometry("1050x720")
         self.configure(bg=C_BG)
-        
+
         # 1. Initialize Shared App State
         self.app_state = AppState()
-        
+
         # 2. Configure global Tkinter styles
         self._configure_styles()
-        
+
         # 3. Build Layout
         self._build_header()
         self._start_clock()
         self._build_layout()
+
+        # --- GUARDRAIL 1: THE ZOMBIE KILLER ---
+        # Intercept the Window Close button to safely kill background processes
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+    def _on_closing(self):
+        """Safely shut down all background threads and SDR hardware before closing."""
+        if hasattr(self, 'generator_ctrl'):
+            self.generator_ctrl.stop_generate()
+
+        if hasattr(self, 'hackrf_ctrl'):
+            self.hackrf_ctrl.stop_tx()
+
+        # Destroy the Tkinter window safely
+        self.destroy()
 
     def _build_header(self) -> None:
         hdr = tk.Frame(self, bg=C_BG, pady=12, padx=20)
@@ -105,21 +121,27 @@ class Application(tk.Tk):
             bg=C_BG,
         ).pack(anchor=tk.W)
 
-        # Right: live UTC clock
+        # Right: live UTC clock AND Settings Button
         right = tk.Frame(hdr, bg=C_BG)
         right.pack(side=tk.RIGHT)
-        tk.Label(right, text="UTC", font=("Courier New", 9), fg=C_MUTED, bg=C_BG).pack()
+        
+        # Settings Button
+        settings_btn = tk.Button(right, text="⚙ Settings", bg=C_PANEL, fg=C_TEXT, activebackground=C_BORDER, activeforeground=C_ACCENT, relief=tk.FLAT, font=FONT_BODY, cursor="hand2", padx=10, pady=4, command=self.open_settings)
+        settings_btn.pack(side=tk.LEFT, padx=(0, 20))
+        
+        # Clock
+        clock_frame = tk.Frame(right, bg=C_BG)
+        clock_frame.pack(side=tk.LEFT)
+        tk.Label(clock_frame, text="UTC", font=("Courier New", 9), fg=C_MUTED, bg=C_BG).pack()
         self._clock_var = tk.StringVar(value="--:--:--")
-        tk.Label(
-            right,
-            textvariable=self._clock_var,
-            font=FONT_CLOCK,
-            fg=C_ACCENT,
-            bg=C_BG,
-        ).pack()
+        tk.Label(clock_frame, textvariable=self._clock_var, font=FONT_CLOCK, fg=C_ACCENT, bg=C_BG).pack()
 
         # Separator below header
         tk.Frame(self, height=1, bg=C_BORDER).pack(fill=tk.X)
+
+    def open_settings(self):
+        """Spawns the Preferences modal."""
+        SettingsDialog(self, self.app_state)
 
     def _start_clock(self) -> None:
         def tick():

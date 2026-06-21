@@ -13,7 +13,10 @@ class BRDCController:
         self.state = app_state
         self.svc = BRDCService()
         self.q = queue.Queue()
-        self.view = BRDCDownloaderView(parent, self)
+
+        # --- FIXED: We are now passing app_state to the View! ---
+        self.view = BRDCDownloaderView(parent, self, app_state)
+
         self.view.pack(fill=tk.BOTH, expand=True)
 
     def start_download(self):
@@ -22,7 +25,10 @@ class BRDCController:
             return self.view.log_line("Missing credentials", "error")
         
         # Save credentials to local cache immediately upon clicking download
-        save_settings(user, pwd)
+        save_settings({
+            "nasa_username": user,
+            "nasa_password": pwd
+        })
         
         date = datetime.datetime.now(datetime.UTC).date() if self.view.date_mode.get() == "today" else datetime.date(int(self.view.year_var.get()), int(self.view.month_var.get()), int(self.view.day_var.get()))
         
