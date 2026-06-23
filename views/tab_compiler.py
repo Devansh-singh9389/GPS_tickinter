@@ -1,11 +1,14 @@
 import os
 import tkinter as tk
+from curses.ascii import ctrl
 from tkinter import ttk, scrolledtext
 from core.theme import *
 from views.components import StyledFrame, SectionLabel, FieldLabel, StyledEntry, PrimaryButton, GhostButton, Divider, \
     attach_advanced_tooltip, ScrollableFrame
 from pathlib import Path
 from core.config import DATA_DIR_COMPILED
+from views.components import SingleSelectDialog
+from core.config import DATA_DIR_BRDCS
 
 
 class CompilerView(tk.Frame):
@@ -36,20 +39,20 @@ class CompilerView(tk.Frame):
 
         # Core Variables
         self.src_dir_var = tk.StringVar(value=str(Path.home() / "Code" / "TRY 1" / "gps-sdr-sim"))
-        self.user_motion_size_var = tk.StringVar(value="3000")
-        self.float_carr_phase_var = tk.BooleanVar(value=False)
-        self.max_sat_var = tk.StringVar(value="32")
-        self.max_chan_var = tk.StringVar(value="16")
+        self.user_motion_size_var = tk.StringVar(value=self.ctrl.state.get_setting("user_motion_size"))
+        self.float_carr_phase_var = tk.BooleanVar(value=self.ctrl.state.get_setting("Enable High-Precision"))
+        self.max_sat_var = tk.StringVar(value=self.ctrl.state.get_setting("max_satterlite"))
+        self.max_chan_var = tk.StringVar(value=self.ctrl.state.get_setting("max_channels"))
 
         # --- FIXED: Pull default optimization from the global Settings memory ---
         default_opt = self.ctrl.state.get_setting("default_optimization", "Recommended Standard")
         self.optimization_var = tk.StringVar(value=default_opt)
 
         # Official Feature Variables
-        self.large_file_var = tk.BooleanVar(value=True)
-        self.multithread_var = tk.BooleanVar(value=False)
-        self.arch_native_var = tk.BooleanVar(value=False)
-        self.fast_math_var = tk.BooleanVar(value=False)
+        self.large_file_var = tk.BooleanVar(value=self.ctrl.state.get_setting("large_file"))
+        self.multithread_var = tk.BooleanVar(value=self.ctrl.state.get_setting("multithread"))
+        self.arch_native_var = tk.BooleanVar(value=self.ctrl.state.get_setting("Native Cpu Arch"))
+        self.fast_math_var = tk.BooleanVar(value=self.ctrl.state.get_setting("Extreme speed Math"))
 
         self.output_exe_var = tk.StringVar(value="gps-sdr-sim")
         self.output_dir_var = tk.StringVar(value=str(DATA_DIR_COMPILED))
@@ -116,9 +119,14 @@ class CompilerView(tk.Frame):
         self.flag_vars = []
 
         default_flags = [
-            ("-Wall", True, "Code Quality",
-             'Turns on "all warnings". Tells the compiler to warn you of potential bugs before building.'),
-            ("-g", False, "Debugging", "Adds debugging information. Use this to find out why the program is crashing.")
+            ("-Wall", False, "Code Quality",
+             'Turns on "all" common compiler warnings. Helps detect potential bugs and style issues before building.'),
+            ("-g", False, "Debugging",
+             "Generates debug information in the operating system's native format. Required for tools like GDB to inspect variables and stack traces."),
+            ("-DENAGLO", False, "Configuration",
+             " Enable GLONASS signal generation.GLONASS (Global Navigation Satellite System) is Russia's space-based satellite navigation system, providing global positioning, navigation"),
+            ("-DENABDS", False, "Configuration",
+             "Enable BeiDou (BDS) signal generation.The BeiDou Navigation Satellite System (BDS) is China’s independent global satellite network")
         ]
 
         for flag_text, start_checked, t_title, t_desc in default_flags:
@@ -183,9 +191,20 @@ class CompilerView(tk.Frame):
         self.log.tag_config("warn", foreground=C_WARNING)
         self.log.tag_config("muted", foreground=C_MUTED)
 
+    def select_nav_file(self):
+        """Opens the custom modern dialog to pick a previously downloaded BRDC file."""
+        SingleSelectDialog(
+            parent=self.view,
+            title="Select Ephemeris (BRDC) File",
+            directory_path=DATA_DIR_BRDCS,
+            file_extension_filter="n",  # This catches .24n, .25n, etc.
+            on_select=lambda filepath: self.view.nav_file_var.set(filepath)
+        )
+
     def _path_row(self, parent, row, label, tt_title, tt_desc, var, command):
+        parent.columnconfigure(1, weight=1)
         FieldLabel(parent, label, tt_title, tt_desc).grid(row=row, column=0, sticky="w", pady=5, padx=(0, 8))
-        StyledEntry(parent, textvariable=var, width=120).grid(row=row, column=1, sticky="ew", pady=5, padx=(8, 6))
+        StyledEntry(parent, textvariable=var).grid(row=row, column=1, sticky="ew", pady=5, padx=(8, 6))
         GhostButton(parent, text="Browse", command=command).grid(row=row, column=2, sticky="e", pady=5)
 
     def _build_header_config(self, parent, row):

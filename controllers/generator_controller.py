@@ -330,5 +330,30 @@ class GeneratorController:
             self.view.progress_var.set(0.0)
             self.view.progress_label.config(text="Initializing...")
 
+    def select_exe_file(self):
+        """Opens the custom modern dialog to pick a previously compiled executable."""
+        from views.components import SingleSelectDialog
+        from core.config import DATA_DIR_COMPILED
 
+        SingleSelectDialog(
+            parent=self.view,
+            title="Select Executable File",
+            directory_path=DATA_DIR_COMPILED,
+            file_extension_filter="",  # Empty string catches all files in the compiled folder
+            on_select=lambda filepath: self.view.exe_var.set(filepath)
+        )
+
+    def select_nav_file(self):
+        """Opens the custom modern dialog to pick a previously downloaded BRDC file."""
+        # Importing locally here makes it super easy to copy-paste!
+        from views.components import SingleSelectDialog
+        from core.config import DATA_DIR_BRDCS
+
+        SingleSelectDialog(
+            parent=self.view,
+            title="Select Ephemeris (BRDC) File",
+            directory_path=DATA_DIR_BRDCS,
+            file_extension_filter="n",  # This catches .24n, .25n, etc.
+            on_select=lambda filepath: self.view.nav_file_var.set(filepath)
+        )
 

@@ -1,5 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext
+
+from botocore.docs.bcdoc import style
+
 from core.theme import *
 from views.components import StyledFrame, SectionLabel, FieldLabel, StyledEntry, PrimaryButton, GhostButton, Divider, \
     ScrollableFrame
@@ -100,7 +103,6 @@ class BRDCDownloaderView(tk.Frame):
 
         self.show_pw_var = tk.BooleanVar(value=False)
         tk.Checkbutton(panel, text="Show", variable=self.show_pw_var, command=lambda: self.pw_entry.config(show="" if self.show_pw_var.get() else "●"), bg=C_PANEL, fg=C_MUTED, activebackground=C_PANEL, activeforeground=C_ACCENT, selectcolor=C_ENTRY_BG, font=("Courier New", 9), relief=tk.FLAT, cursor="hand2").grid(row=2, column=2, pady=4)
-
 
     def _build_date_panel(self, parent):
         panel = StyledFrame(parent, padx=18, pady=16)

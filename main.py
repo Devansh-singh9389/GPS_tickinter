@@ -61,7 +61,7 @@ class Application(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("509 Army WSP")
-        self.geometry("1050x720")
+        self.geometry("1920x1080")
         self.configure(bg=C_BG)
 
         # 1. Initialize Shared App State

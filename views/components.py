@@ -41,6 +41,148 @@ def attach_advanced_tooltip(widget: tk.Widget, title: str, description: str) -> 
     widget.bind("<Leave>", hide)
 
 
+# --- DIALOGS ---
+class SingleSelectDialog(tk.Toplevel):
+    """A pure custom Tkinter dialog for picking a single file."""
+
+    def __init__(self, parent, title, directory_path, file_extension_filter, on_select):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("1080x720")
+        self.configure(bg=C_BG)  # Custom Theme Background
+        self.transient(parent)
+        self.grab_set()
+
+        self.update_idletasks()
+        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (450 // 2)
+        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (400 // 2)
+        self.geometry(f"+{x}+{y}")
+
+        self.on_select = on_select
+        self.selected_file = tk.StringVar(value="")
+
+        self.files = []
+        if directory_path.exists():
+            self.files = list(directory_path.glob(f"*{file_extension_filter}*"))
+
+        self._build_ui()
+
+    def _build_ui(self):
+        main_frame = tk.Frame(self, bg=C_BG, padx=20, pady=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        SectionLabel(main_frame, f"Select a File").pack(anchor="w", pady=(0, 10))
+
+        scroll_container = tk.Frame(main_frame, bg=C_PANEL, highlightbackground=C_BORDER, highlightthickness=1)
+        scroll_container.pack(fill=tk.BOTH, expand=True, pady=10)
+
+        scroll = ScrollableFrame(scroll_container)
+        scroll.pack(fill=tk.BOTH, expand=True)
+
+        # Force the scrollable areas to match the panel color
+        if hasattr(scroll, 'canvas'): scroll.canvas.configure(bg=C_PANEL)
+        if hasattr(scroll, 'content'): scroll.content.configure(bg=C_PANEL)
+
+        if not self.files:
+            tk.Label(scroll.content, text="No files found in this directory.", bg=C_PANEL, fg=C_MUTED,
+                     font=FONT_BODY).pack(anchor="w", pady=10, padx=10)
+        else:
+            for file_path in self.files:
+                tk.Radiobutton(
+                    scroll.content,
+                    text=f"📄 {file_path.name}",
+                    value=str(file_path),
+                    variable=self.selected_file,
+                    bg=C_PANEL,
+                    fg=C_TEXT,
+                    selectcolor=C_ENTRY_BG,
+                    activebackground=C_PANEL,
+                    activeforeground=C_ACCENT,
+                    font=FONT_BODY,
+                    cursor="hand2"
+                ).pack(anchor="w", pady=4, padx=6)
+
+        btn_frame = tk.Frame(main_frame, bg=C_BG)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+
+        GhostButton(btn_frame, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
+        PrimaryButton(btn_frame, text="Select", command=self._confirm).pack(side=tk.RIGHT)
+
+    def _confirm(self):
+        if self.selected_file.get():
+            self.on_select(self.selected_file.get())
+            self.destroy()
+
+
+class MultiSelectDeleteDialog(tk.Toplevel):
+    """A pure custom Tkinter dialog for selecting and deleting multiple files."""
+
+    def __init__(self, parent, title, files, on_confirm):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("400x350")
+        self.configure(bg=C_BG)  # Custom Theme Background
+        self.transient(parent)
+        self.grab_set()
+
+        self.update_idletasks()
+        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (400 // 2)
+        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (350 // 2)
+        self.geometry(f"+{x}+{y}")
+
+        self.files = files
+        self.on_confirm = on_confirm
+        self.checkbox_vars = {}
+
+        self._build_ui()
+
+    def _build_ui(self):
+        main_frame = tk.Frame(self, bg=C_BG, padx=20, pady=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        SectionLabel(main_frame, "Select Files to Delete").pack(anchor="w", pady=(0, 10))
+
+        scroll_container = tk.Frame(main_frame, bg=C_PANEL, highlightbackground=C_BORDER, highlightthickness=1)
+        scroll_container.pack(fill=tk.BOTH, expand=True, pady=10)
+
+        scroll = ScrollableFrame(scroll_container)
+        scroll.pack(fill=tk.BOTH, expand=True)
+
+        if hasattr(scroll, 'canvas'): scroll.canvas.configure(bg=C_PANEL)
+        if hasattr(scroll, 'content'): scroll.content.configure(bg=C_PANEL)
+
+        if not self.files:
+            tk.Label(scroll.content, text="No files found.", bg=C_PANEL, fg=C_MUTED, font=FONT_BODY).pack(anchor="w",
+                                                                                                          pady=10,
+                                                                                                          padx=10)
+        else:
+            for file_path in self.files:
+                var = tk.BooleanVar(value=False)
+                self.checkbox_vars[file_path] = var
+                tk.Checkbutton(
+                    scroll.content,
+                    text=file_path.name,
+                    variable=var,
+                    bg=C_PANEL,
+                    fg=C_TEXT,
+                    selectcolor=C_ENTRY_BG,
+                    activebackground=C_PANEL,
+                    activeforeground=C_ACCENT,
+                    font=FONT_BODY,
+                    cursor="hand2"
+                ).pack(anchor="w", pady=2, padx=6)
+
+        btn_frame = tk.Frame(main_frame, bg=C_BG)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+
+        GhostButton(btn_frame, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
+        PrimaryButton(btn_frame, text="Delete Selected", command=self._confirm).pack(side=tk.RIGHT)
+
+    def _confirm(self):
+        selected = [fp for fp, var in self.checkbox_vars.items() if var.get()]
+        self.on_confirm(selected)
+        self.destroy()
+
 class StyledFrame(tk.Frame):
     def __init__(self, parent, **kwargs):
         kwargs.setdefault("bg", C_PANEL)
@@ -222,4 +364,5 @@ class MultiSelectDeleteDialog(tk.Toplevel):
 
         PrimaryButton(btn_frame, text="Delete Selected", command=confirm, bg=C_ERROR).pack(side=tk.RIGHT)
         GhostButton(btn_frame, text="Cancel", command=self.destroy).pack(side=tk.RIGHT, padx=8)
+
 
